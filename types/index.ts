@@ -57,4 +57,4 @@ export interface AnalyzeResponse {
 
 export type RiskLevel = 'Low' | 'Medium' | 'High' | 'CRITICAL';
 export type Category = 'Hate Speech' | 'Spam' | 'Violence' | 'Safe';
-export type Action = 'Allow' | 'Review' | 'Remove';
+export type Action = 'Allow' | 'Review' | 'Remove' | 'Escalate';
