@@ -1,10 +1,39 @@
-import { supabase } from '@/lib/supabase';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Video, Analysis, Review, VideoWithAnalysis } from '@/types';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY');
+}
+
+const supabase: SupabaseClient | null = (supabaseUrl && supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    })
+  : null;
+
+if (!supabase) {
+  console.warn('⚠️ Supabase client not initialized');
+}
+
+async function getClient(): Promise<SupabaseClient> {
+  if (!supabase) {
+    throw new Error('Supabase not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+  return supabase;
+}
 
 export async function insertVideo(video: Omit<Video, 'id' | 'created_at'>): Promise<Video> {
   console.log('[DB] Inserting video:', { videoId: video.video_id, title: video.title, channel: video.channel_name });
   
-  const { data, error } = await supabase
+  const client = await getClient();
+  
+  const { data, error } = await client
     .from('videos')
     .insert(video)
     .select()
@@ -22,7 +51,9 @@ export async function insertVideo(video: Omit<Video, 'id' | 'created_at'>): Prom
 export async function insertAnalysis(analysis: Omit<Analysis, 'id' | 'created_at'>): Promise<Analysis> {
   console.log('[DB] Inserting analysis:', { videoId: analysis.video_id, category: analysis.category, riskScore: analysis.risk_score });
   
-  const { data, error } = await supabase
+  const client = await getClient();
+  
+  const { data, error } = await client
     .from('analysis')
     .insert(analysis)
     .select()
@@ -38,7 +69,9 @@ export async function insertAnalysis(analysis: Omit<Analysis, 'id' | 'created_at
 }
 
 export async function insertReview(review: Omit<Review, 'id' | 'reviewed_at'>): Promise<Review> {
-  const { data, error } = await supabase
+  const client = await getClient();
+  
+  const { data, error } = await client
     .from('reviews')
     .insert(review)
     .select()
@@ -49,7 +82,9 @@ export async function insertReview(review: Omit<Review, 'id' | 'reviewed_at'>): 
 }
 
 export async function getVideoWithAnalysis(videoId: string): Promise<VideoWithAnalysis | null> {
-  const { data: video, error: videoError } = await supabase
+  const client = await getClient();
+  
+  const { data: video, error: videoError } = await client
     .from('videos')
     .select('*')
     .eq('id', videoId)
@@ -57,13 +92,13 @@ export async function getVideoWithAnalysis(videoId: string): Promise<VideoWithAn
 
   if (videoError || !video) return null;
 
-  const { data: analysis } = await supabase
+  const { data: analysis } = await client
     .from('analysis')
     .select('*')
     .eq('video_id', videoId)
     .single();
 
-  const { data: review } = await supabase
+  const { data: review } = await client
     .from('reviews')
     .select('*')
     .eq('video_id', videoId)
@@ -86,23 +121,11 @@ export async function getVideos(
     offset?: number;
   }
 ): Promise<{ videos: VideoWithAnalysis[]; total: number }> {
-  let query = supabase
+  const client = await getClient();
+  
+  const { data: videos, error, count } = await client
     .from('videos')
-    .select(`
-      *,
-      analysis (*),
-      reviews (*)
-    `, { count: 'exact' });
-
-  if (filters?.red_zone) {
-    query = query.eq('analysis.red_zone', true);
-  }
-
-  if (filters?.action) {
-    query = query.eq('analysis.action', filters.action);
-  }
-
-  const { data: videos, error, count } = await query
+    .select('*, analysis(*), reviews(*)', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(filters?.offset || 0, (filters?.limit || 20) + (filters?.offset || 0) - 1);
 
@@ -124,13 +147,11 @@ export async function getVideos(
 }
 
 export async function getRedZoneVideos(): Promise<VideoWithAnalysis[]> {
-  const { data, error } = await supabase
+  const client = await getClient();
+  
+  const { data, error } = await client
     .from('videos')
-    .select(`
-      *,
-      analysis (*),
-      reviews (*)
-    `)
+    .select('*, analysis(*), reviews(*)')
     .eq('analysis.red_zone', true)
     .order('analysis.risk_score', { ascending: false });
 
@@ -148,14 +169,16 @@ export async function updateReview(
   finalAction: string,
   reviewerNote?: string
 ): Promise<Review> {
-  const existingReview = await supabase
+  const client = await getClient();
+  
+  const existingReview = await client
     .from('reviews')
     .select('id')
     .eq('video_id', videoId)
     .single();
 
   if (existingReview.data) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('reviews')
       .update({
         final_action: finalAction,
@@ -183,11 +206,13 @@ export async function getDashboardStats(): Promise<{
   riskLevelBreakdown: Record<string, number>;
   redZoneCount: number;
 }> {
-  const { count: total } = await supabase
+  const client = await getClient();
+  
+  const { count: total } = await client
     .from('analysis')
     .select('*', { count: 'exact', head: true });
 
-  const { data: categoryData } = await supabase
+  const { data: categoryData } = await client
     .from('analysis')
     .select('category');
 
@@ -196,7 +221,7 @@ export async function getDashboardStats(): Promise<{
     categoryBreakdown[a.category] = (categoryBreakdown[a.category] || 0) + 1;
   });
 
-  const { data: riskData } = await supabase
+  const { data: riskData } = await client
     .from('analysis')
     .select('risk_level');
 
@@ -205,7 +230,7 @@ export async function getDashboardStats(): Promise<{
     riskLevelBreakdown[a.risk_level] = (riskLevelBreakdown[a.risk_level] || 0) + 1;
   });
 
-  const { count: redZoneCount } = await supabase
+  const { count: redZoneCount } = await client
     .from('analysis')
     .select('*', { count: 'exact', head: true })
     .eq('red_zone', true);
@@ -219,10 +244,12 @@ export async function getDashboardStats(): Promise<{
 }
 
 export async function getTrendData(days: number = 7): Promise<{ date: string; count: number }[]> {
+  const client = await getClient();
+  
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
 
-  const { data } = await supabase
+  const { data } = await client
     .from('videos')
     .select('created_at')
     .gte('created_at', startDate.toISOString())

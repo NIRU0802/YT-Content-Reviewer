@@ -1,29 +1,16 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-let _supabase: SupabaseClient | null = null;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-function getClient(): SupabaseClient {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('supabaseUrl is required.');
-  }
-
-  if (!_supabase) {
-    _supabase = createClient(supabaseUrl, supabaseAnonKey);
-  }
-
-  return _supabase;
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('⚠️ Supabase credentials not configured. Database features will not work.');
 }
 
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(_target, prop) {
-    const client = getClient();
-    return (client as any)[prop];
-  },
-  apply(_target, _thisArg, args) {
-    const client = getClient();
-    return (client as any)(...args);
-  }
-});
+export const supabase: SupabaseClient = (supabaseUrl && supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+      },
+    })
+  : (null as any);
