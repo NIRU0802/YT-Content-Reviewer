@@ -25,6 +25,14 @@ async function getClient(): Promise<SupabaseClient> {
   if (!supabase) {
     throw new Error('Supabase not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY');
   }
+  // Test connection
+  const { error } = await supabase.from('videos').select('count').limit(1);
+  if (error && error.message.includes('relation "videos" does not exist')) {
+    throw new Error('Database tables not created. Run supabase-schema.sql in Supabase SQL Editor.');
+  }
+  if (error && error.message.includes('relation "supabase_migrations.schema_migrations" does not exist')) {
+    console.warn('[DB] Migration table missing but tables may exist, continuing...');
+  }
   return supabase;
 }
 
@@ -123,11 +131,32 @@ export async function getVideos(
 ): Promise<{ videos: VideoWithAnalysis[]; total: number }> {
   const client = await getClient();
   
-  const { data: videos, error, count } = await client
+  console.log('[DB] getVideos called with filters:', filters);
+  
+  // First, just try to get count of videos
+  const { count, error: countError } = await client
     .from('videos')
-    .select('*, analysis(*), reviews(*)', { count: 'exact' })
+    .select('*', { count: 'exact', head: true });
+
+  if (countError) {
+    console.error('[DB] Error getting videos count:', countError);
+    throw new Error(`Failed to fetch videos: ${countError.message}`);
+  }
+
+  console.log('[DB] Total videos in DB:', count);
+
+  // Now get the actual data with joined tables
+  let query = client
+    .from('videos')
+    .select('*, analysis(*), reviews(*)')
     .order('created_at', { ascending: false })
     .range(filters?.offset || 0, (filters?.limit || 20) + (filters?.offset || 0) - 1);
+
+  if (filters?.action) {
+    query = query.eq('analysis.action', filters.action);
+  }
+
+  const { data: videos, error } = await query;
 
   if (error) {
     console.error('[DB] Error fetching videos:', error);
@@ -208,9 +237,18 @@ export async function getDashboardStats(): Promise<{
 }> {
   const client = await getClient();
   
-  const { count: total } = await client
+  console.log('[DB] getDashboardStats called');
+  
+  const { count: total, error: totalError } = await client
     .from('analysis')
     .select('*', { count: 'exact', head: true });
+
+  if (totalError) {
+    console.error('[DB] Error getting analysis count:', totalError);
+    throw new Error(`Failed to get stats: ${totalError.message}`);
+  }
+
+  console.log('[DB] Total analyzed:', total);
 
   const { data: categoryData } = await client
     .from('analysis')
