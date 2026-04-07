@@ -1,0 +1,7 @@
+{
+  "project_id": "qjkicgyphdqhuazmqfkx",
+  "schemas": ["public"],
+  "tables": ["videos", "analysis", "reviews", "audit_logs"],
+  "extensions": ["uuid-ossp"],
+  "tablesPrefix": ""
+}
