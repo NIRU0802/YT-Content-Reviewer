@@ -1,13 +1,29 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+let _supabase: SupabaseClient | null = null;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+function getClient(): SupabaseClient {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const getSupabaseClient = () => {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Supabase credentials not configured');
+    throw new Error('supabaseUrl is required.');
   }
-  return supabase;
-};
+
+  if (!_supabase) {
+    _supabase = createClient(supabaseUrl, supabaseAnonKey);
+  }
+
+  return _supabase;
+}
+
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getClient();
+    return (client as any)[prop];
+  },
+  apply(_target, _thisArg, args) {
+    const client = getClient();
+    return (client as any)(...args);
+  }
+});
