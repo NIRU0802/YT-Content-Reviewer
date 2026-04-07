@@ -32,7 +32,7 @@ export default function ReviewPage() {
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
   const [reviewNote, setReviewNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'reviewed'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'reviewed' | 'review'>('review');
 
   useEffect(() => {
     fetchVideos();
@@ -40,8 +40,9 @@ export default function ReviewPage() {
 
   const fetchVideos = async () => {
     try {
-      const response = await fetch('/api/videos');
+      const response = await fetch('/api/videos?action=REVIEW');
       const data = await response.json();
+      console.log('[Review] Fetched videos:', data.videos?.length || 0);
       setVideos(data.videos || []);
     } catch (error) {
       console.error('Error fetching videos:', error);
@@ -144,8 +145,9 @@ export default function ReviewPage() {
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as any)}
               >
-                <option value="all">All</option>
-                <option value="pending">Pending</option>
+                <option value="review">Pending Review</option>
+                <option value="all">All Videos</option>
+                <option value="pending">Unreviewed</option>
                 <option value="reviewed">Reviewed</option>
               </select>
             </div>

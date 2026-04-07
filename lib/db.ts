@@ -2,24 +2,38 @@ import { supabase } from '@/lib/supabase';
 import { Video, Analysis, Review, VideoWithAnalysis } from '@/types';
 
 export async function insertVideo(video: Omit<Video, 'id' | 'created_at'>): Promise<Video> {
+  console.log('[DB] Inserting video:', { videoId: video.video_id, title: video.title, channel: video.channel_name });
+  
   const { data, error } = await supabase
     .from('videos')
     .insert(video)
     .select()
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error('[DB] Error inserting video:', error);
+    throw new Error(error.message);
+  }
+  
+  console.log('[DB] Video inserted successfully:', data.id);
   return data;
 }
 
 export async function insertAnalysis(analysis: Omit<Analysis, 'id' | 'created_at'>): Promise<Analysis> {
+  console.log('[DB] Inserting analysis:', { videoId: analysis.video_id, category: analysis.category, riskScore: analysis.risk_score });
+  
   const { data, error } = await supabase
     .from('analysis')
     .insert(analysis)
     .select()
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error('[DB] Error inserting analysis:', error);
+    throw new Error(error.message);
+  }
+  
+  console.log('[DB] Analysis inserted successfully:', data.id);
   return data;
 }
 
@@ -67,6 +81,7 @@ export async function getVideos(
     category?: string;
     risk_level?: string;
     red_zone?: boolean;
+    action?: string;
     limit?: number;
     offset?: number;
   }
@@ -83,11 +98,18 @@ export async function getVideos(
     query = query.eq('analysis.red_zone', true);
   }
 
+  if (filters?.action) {
+    query = query.eq('analysis.action', filters.action);
+  }
+
   const { data: videos, error, count } = await query
     .order('created_at', { ascending: false })
     .range(filters?.offset || 0, (filters?.limit || 20) + (filters?.offset || 0) - 1);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error('[DB] Error fetching videos:', error);
+    throw new Error(error.message);
+  }
 
   const transformedVideos = (videos || []).map((v: any) => ({
     ...v,

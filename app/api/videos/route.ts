@@ -6,10 +6,13 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
     const redZone = searchParams.get('red_zone');
+    const action = searchParams.get('action');  // NEW: filter by action (REVIEW, REMOVE, ALLOW)
     const category = searchParams.get('category');
     const risk_level = searchParams.get('risk_level');
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
+
+    console.log('[API /videos] Fetching videos:', { id, redZone, category, risk_level, limit, offset });
 
     if (id) {
       const video = await getVideoWithAnalysis(id);
@@ -24,6 +27,7 @@ export async function GET(request: NextRequest) {
 
     if (redZone === 'true') {
       const videos = await getRedZoneVideos();
+      console.log('[API /videos] Red zone videos:', videos.length);
       return NextResponse.json({ success: true, videos, total: videos.length });
     }
 
@@ -31,10 +35,12 @@ export async function GET(request: NextRequest) {
     if (category) filters.category = category;
     if (risk_level) filters.risk_level = risk_level;
     if (redZone === 'true') filters.red_zone = true;
+    if (action) filters.action = action;
     filters.limit = limit;
     filters.offset = offset;
 
     const result = await getVideos(filters);
+    console.log('[API /videos] Videos fetched:', { count: result.videos.length, total: result.total });
     return NextResponse.json({ 
       success: true, 
       videos: result.videos,
@@ -43,7 +49,7 @@ export async function GET(request: NextRequest) {
       offset,
     });
   } catch (error: any) {
-    console.error('Error fetching videos:', error);
+    console.error('[API /videos] Error fetching videos:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

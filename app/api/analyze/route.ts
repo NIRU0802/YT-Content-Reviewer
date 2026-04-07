@@ -11,12 +11,57 @@ import {
 import { checkRateLimit } from '@/lib/rateLimiter';
 import { generateVideoHash, generateHash } from '@/lib/hashUtil';
 import { log, LogType, LogLevel } from '@/lib/logger';
+import { insertVideo, insertAnalysis } from '@/lib/db';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 const YOUTUBE_TIMEOUT_MS = 8000;
 
 const MAX_INPUT_LENGTH = 2000;
+
+async function saveToSupabase(
+  url: string,
+  videoId: string,
+  title: string,
+  channelName: string,
+  description: string,
+  comments: string[],
+  analysis: {
+    category: string;
+    riskScore: number;
+    riskLevel: string;
+    decision: string;
+    explanation: string;
+  }
+) {
+  console.log('[DB] Saving to Supabase:', { videoId, title, category: analysis.category, riskScore: analysis.riskScore });
+  
+  const video = await insertVideo({
+    url,
+    video_id: videoId,
+    title,
+    description: description || null,
+    channel_name: channelName,
+    comments,
+  });
+  
+  console.log('[DB] Video inserted:', video.id);
+  
+  await insertAnalysis({
+    video_id: video.id,
+    category: analysis.category as any,
+    confidence: analysis.riskScore / 100,
+    risk_score: analysis.riskScore,
+    risk_level: analysis.riskLevel as any,
+    action: analysis.decision as any,
+    reason: analysis.explanation,
+    red_zone: analysis.riskScore >= 80,
+  });
+  
+  console.log('[DB] Analysis inserted for video:', video.id);
+  
+  return video;
+}
 
 interface YouTubeVideoData {
   videoId: string;
@@ -155,6 +200,20 @@ export async function POST(request: NextRequest) {
     if (cached) {
       log(LogType.CACHE_HIT, 'Cache hit - returning cached result', LogLevel.INFO, { videoId });
       
+      // Check if exists in Supabase, if not save it
+      try {
+        await saveToSupabase(url, videoId, cached.title, cached.title.split(' - ')[0] || 'Unknown', '', [], {
+          category: cached.analysis,
+          riskScore: cached.score,
+          riskLevel: cached.score >= 80 ? 'CRITICAL' : cached.score >= 50 ? 'High' : cached.score >= 25 ? 'Medium' : 'Low',
+          decision: cached.decision,
+          explanation: cached.analysis,
+        });
+        log(LogType.CACHE_MISS, 'Cached result synced to Supabase', LogLevel.INFO, { videoId });
+      } catch (dbError: any) {
+        log(LogType.ERROR, 'Failed to sync cached result to Supabase', LogLevel.ERROR, { error: dbError.message });
+      }
+      
       return NextResponse.json({
         success: true,
         cached: true,
@@ -243,6 +302,28 @@ export async function POST(request: NextRequest) {
     await saveResult(cacheData);
 
     log(LogType.CACHE_MISS, 'Result saved to cache', LogLevel.INFO, { videoId });
+
+    // Save to Supabase for dashboard/review
+    try {
+      await saveToSupabase(
+        url,
+        videoId,
+        videoData.title,
+        videoData.channelName,
+        videoData.description,
+        videoData.comments,
+        {
+          category: result.category,
+          riskScore: result.riskScore,
+          riskLevel: result.riskScore >= 80 ? 'CRITICAL' : result.riskScore >= 50 ? 'High' : result.riskScore >= 25 ? 'Medium' : 'Low',
+          decision: result.decision,
+          explanation: result.explanation,
+        }
+      );
+      log(LogType.CACHE_MISS, 'Result saved to Supabase', LogLevel.INFO, { videoId });
+    } catch (dbError: any) {
+      log(LogType.ERROR, 'Failed to save to Supabase', LogLevel.ERROR, { error: dbError.message });
+    }
 
     return NextResponse.json({
       success: true,
