@@ -41,15 +41,27 @@ async function ensureTables(): Promise<SupabaseClient> {
 
 export async function insertVideo(video: Omit<Video, 'id' | 'created_at'>): Promise<Video> {
   const client = await ensureTables();
+  console.log('[DB] insertVideo called with:', JSON.stringify(video, null, 2));
+  
   const { data, error } = await client.from('videos').insert(video).select().single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error('[DB] insertVideo error:', JSON.stringify(error, null, 2));
+    throw new Error(error.message);
+  }
+  console.log('[DB] insertVideo success:', data);
   return data;
 }
 
 export async function insertAnalysis(analysis: Omit<Analysis, 'id' | 'created_at'>): Promise<Analysis> {
   const client = await ensureTables();
+  console.log('[DB] insertAnalysis called with:', JSON.stringify(analysis, null, 2));
+  
   const { data, error } = await client.from('analysis').insert(analysis).select().single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error('[DB] insertAnalysis error:', JSON.stringify(error, null, 2));
+    throw new Error(error.message);
+  }
+  console.log('[DB] insertAnalysis success:', data);
   return data;
 }
 
@@ -78,6 +90,7 @@ export async function getVideos(filters?: {
   offset?: number;
 }): Promise<{ videos: VideoWithAnalysis[]; total: number }> {
   const client = await ensureTables();
+  console.log('[DB] getVideos called with filters:', filters);
   
   let query = client.from('videos').select('*, analysis(*), reviews(*)');
   
@@ -85,9 +98,15 @@ export async function getVideos(filters?: {
     query = query.eq('analysis.action', filters.action);
   }
   
-  const { data: videos, count } = await query
+  const { data: videos, count, error } = await query
     .order('created_at', { ascending: false })
     .range(filters?.offset || 0, (filters?.limit || 20) + (filters?.offset || 0) - 1);
+    
+  if (error) {
+    console.error('[DB] getVideos error:', JSON.stringify(error, null, 2));
+  }
+  
+  console.log('[DB] getVideos result:', { count, videos: videos?.length });
     
   return {
     videos: (videos || []).map((v: any) => ({
@@ -120,8 +139,12 @@ export async function updateReview(videoId: string, finalAction: string, reviewe
 
 export async function getDashboardStats() {
   const client = await ensureTables();
+  console.log('[DB] getDashboardStats called');
   
-  const { count: total } = await client.from('analysis').select('*', { count: 'exact', head: true });
+  const { count: total, error: totalError } = await client.from('analysis').select('*', { count: 'exact', head: true });
+  if (totalError) console.error('[DB] getDashboardStats - total error:', totalError);
+  console.log('[DB] total analyzed:', total);
+  
   const { data: categoryData } = await client.from('analysis').select('category');
   const { data: riskData } = await client.from('analysis').select('risk_level');
   const { count: redZoneCount } = await client.from('analysis').select('*', { count: 'exact', head: true }).eq('red_zone', true);
